@@ -8,3 +8,6 @@ edition = "2021"
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 bytes = "1"
+chrono = "0.4.26"
+log = "0.4.19"
+env_logger = "0.10.0"

@@ -50,9 +50,10 @@ impl TcpReader {
         let mut buf = BytesMut::with_capacity(1024);
         let mut buffer: [u8; 1] = [0; 1];
         loop {
-            let ux = self.stream.read(&mut buffer[..]).await.unwrap();
+            //当前当前时间
+            let ux = self.stream.read(&mut buffer[..]).await?;
             if ux == 0 {
-                return Err(Error::new(std::io::ErrorKind::Other, "No line found"))
+                return Err(Error::new(std::io::ErrorKind::Other, "EOF"));
             }
             if buffer[0] == b'\n' {
                 break;
