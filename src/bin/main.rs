@@ -10,8 +10,14 @@ async fn main() {
         }
     };
 
-    let msg = watch::message::new_message(String::from("hget"), 1, vec![String::from("nodeRegister:"), String::from("game0")]);
-    cli.connection.write_message(&msg).await.unwrap();
+    match cli.key_prefix("nodeRegister").await {
+        Ok(values) => {
+            println!("values: {:?}", values);
+        },
+        Err(e) => {
+            println!("Error: {}", e);
+        }
+    }
 
     //sleep
     tokio::time::sleep(tokio::time::Duration::from_secs(100)).await;
