@@ -1,77 +1,58 @@
-use std::{io::{Cursor, BufRead}, fs::read_link};
-
-use bytes::{Buf, BytesMut};
+use std::io::Error;
+use bytes::{BytesMut, BufMut};
 use tokio::{io::{AsyncReadExt, AsyncWriteExt, BufWriter}, net::TcpStream};
-
 use crate::watch::message::Message;
 
-use super::message::get_line;
 
 #[derive(Debug)]
 pub struct Connection {
     stream: BufWriter<TcpStream>,
-    buffer : BytesMut,
 }
 
 impl Connection {
     pub fn new(stream: TcpStream) -> Self {
         Self {
             stream: BufWriter::new(stream),
-            buffer : BytesMut::with_capacity(4096),
         }
     }
 
-    pub async fn read_message(&mut self) -> Option<Message> {
+    pub async fn read_line(&mut self) -> Result<String, Error> {
+        let mut buf = BytesMut::with_capacity(1024);
+        let mut buffer: [u8; 1] = [0; 1];
         loop {
-            let mut buf = Cursor::new(&self.buffer[..]);
-            let mut msg = Message::new("".to_string(), 0, vec![]);
-
-            let x = get_line(&mut buf);
-            match x {
-                Ok(x) => {
-                    msg.cmd = String::from_utf8(x.to_vec()).unwrap();
-                },
-                Err(e) => {
-                    ()
-                }
+            let ux = self.stream.read(&mut buffer[..]).await.unwrap();
+            if ux == 0 {
+                return Err(Error::new(std::io::ErrorKind::Other, "No line found"))
             }
-
-            let req = get_line(&mut buf);
-            match req {
-                Ok(req) => {
-                    //to int64
-                    msg.seq = String::from_utf8(req.to_vec()).unwrap().parse::<i64>().unwrap();
-                },
-                Err(e) => {
-                    ()
-                }
+            if buffer[0] == b'\n' {
+                break;
             }
-
-            let mut n : i64 = 0;
-            let vn = get_line(&mut buf);
-            match vn {
-                Ok(vn) => {
-                    //to int64
-                    n = String::from_utf8(vn.to_vec()).unwrap().parse::<i64>().unwrap();
-                },
-                Err(e) => {
-                    ()
-                }
-            }
-
-            for _ in 0..n  {
-                let x = get_line(&mut buf);
-                match x {
-                    Ok(x) => {
-                        msg.values.push(String::from_utf8(x.to_vec()).unwrap());
-                    },
-                    Err(e) => {
-                        ()
-                    }
-                }
-            }
-
-            return Some(msg);
+            buf.put(&buffer[..]);
         }
+
+
+        return Ok(String::from_utf8(buf.to_vec()).unwrap());
+    }
+
+    pub async fn read_message(&mut self) -> Result<Message, Error> {
+        let x: String = self.read_line().await?;
+        let seqs = self.read_line().await?;
+        let vn: String = self.read_line().await?;
+        let seq = match seqs.parse::<i64>() {
+            Ok(v) => v,
+            Err(_) => return Err(Error::new(std::io::ErrorKind::Other, "Invalid sequence number")),
+        };
+        let mut msg = Message::new(x, seq, vec![]);
+        let n = match vn.parse::<i64>() {
+            Ok(v) => v,
+            Err(_) => return Err(Error::new(std::io::ErrorKind::Other, "Invalid number of values")),
+        };
+
+        for _ in 0..n {
+            let s = self.read_line().await?;
+            msg.values.push(s);
+        }
+
+        return Ok(msg);
     }
 }
