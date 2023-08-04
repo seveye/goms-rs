@@ -1,5 +1,3 @@
-use std::{io::{Cursor, Error}};
-
 #[derive(Debug)]
 pub struct Message {
     pub cmd: String,
@@ -7,13 +5,11 @@ pub struct Message {
     pub values: Vec<String>,
 }
 
-impl Message {
-    pub fn new(cmd: String, seq: i64, values: Vec<String>) -> Self {
-        Self {
-            cmd,
-            seq,
-            values,
-        }
+pub fn new_message(cmd: String, seq: i64, values: Vec<String>) -> Message {
+    Message {
+        cmd,
+        seq,
+        values,
     }
 }
 

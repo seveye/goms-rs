@@ -1,18 +1,48 @@
 use std::io::Error;
 use bytes::{BytesMut, BufMut};
-use tokio::{io::{AsyncReadExt, AsyncWriteExt, BufWriter}, net::TcpStream};
-use crate::watch::message::Message;
+use tokio::{io::{AsyncReadExt, AsyncWriteExt, BufWriter}, net::tcp::{OwnedWriteHalf, OwnedReadHalf}};
+use crate::watch::message::{Message, new_message};
 
 
 #[derive(Debug)]
-pub struct Connection {
-    stream: BufWriter<TcpStream>,
+pub struct TcpWriter {
+    pub stream: BufWriter<OwnedWriteHalf>,
 }
 
-impl Connection {
-    pub fn new(stream: TcpStream) -> Self {
+impl TcpWriter {
+    pub fn new(stream: OwnedWriteHalf) -> Self {
         Self {
             stream: BufWriter::new(stream),
+        }
+    }
+
+    pub async fn write_message(&mut self, msg: &Message) -> Result<(), Error> {
+        self.stream.write_all(msg.cmd.as_bytes()).await?;
+        self.stream.write_all(b"\n").await?;
+        self.stream.write_all(msg.seq.to_string().as_bytes()).await?;
+        self.stream.write_all(b"\n").await?;
+        self.stream.write_all(msg.values.len().to_string().as_bytes()).await?;
+        self.stream.write_all(b"\n").await?;
+        for v in &msg.values {
+            self.stream.write_all(v.as_bytes()).await?;
+            self.stream.write_all(b"\n").await?;
+        }
+        self.stream.flush().await?;
+        return Ok(());
+    }
+}
+
+
+
+#[derive(Debug)]
+pub struct TcpReader {
+    pub stream: OwnedReadHalf,
+}
+
+impl TcpReader {
+    pub fn new(stream: OwnedReadHalf) -> Self {
+        Self {
+            stream: stream,
         }
     }
 
@@ -42,7 +72,7 @@ impl Connection {
             Ok(v) => v,
             Err(_) => return Err(Error::new(std::io::ErrorKind::Other, "Invalid sequence number")),
         };
-        let mut msg = Message::new(x, seq, vec![]);
+        let mut msg = new_message(x, seq, vec![]);
         let n = match vn.parse::<i64>() {
             Ok(v) => v,
             Err(_) => return Err(Error::new(std::io::ErrorKind::Other, "Invalid number of values")),
