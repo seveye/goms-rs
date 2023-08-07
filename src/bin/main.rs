@@ -15,7 +15,7 @@ async fn main() {
             record.args()
         )
     })
-    .filter(None, LevelFilter::Info)
+    .filter(None, LevelFilter::Trace)
     .init();
 
     let mut cli = match watch::client::connect("127.0.0.1:16543").await {
@@ -40,6 +40,5 @@ async fn main() {
     //sleep
     loop {
         tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-        let _ = cli.heartbeat().await;
     }
 }
