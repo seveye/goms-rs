@@ -1,4 +1,4 @@
-use std::io::Error;
+use anyhow::Result;
 use bytes::{BytesMut, BufMut};
 use tokio::{io::{AsyncReadExt, AsyncWriteExt, BufWriter}, net::tcp::{OwnedWriteHalf, OwnedReadHalf}};
 use crate::watch::message::{Message, new_message};
@@ -16,7 +16,7 @@ impl TcpWriter {
         }
     }
 
-    pub async fn write_message(&mut self, msg: &Message) -> Result<(), Error> {
+    pub async fn write_message(&mut self, msg: &Message) -> Result<()> {
         self.stream.write_all(msg.cmd.as_bytes()).await?;
         self.stream.write_all(b"\n").await?;
         self.stream.write_all(msg.seq.to_string().as_bytes()).await?;
@@ -46,14 +46,14 @@ impl TcpReader {
         }
     }
 
-    pub async fn read_line(&mut self) -> Result<String, Error> {
+    pub async fn read_line(&mut self) -> Result<String> {
         let mut buf = BytesMut::with_capacity(1024);
         let mut buffer: [u8; 1] = [0; 1];
         loop {
             //当前当前时间
             let ux = self.stream.read(&mut buffer[..]).await?;
             if ux == 0 {
-                return Err(Error::new(std::io::ErrorKind::Other, "EOF"));
+                return Err(anyhow::anyhow!("read_line error"));
             }
             if buffer[0] == b'\n' {
                 break;
@@ -65,19 +65,13 @@ impl TcpReader {
         return Ok(String::from_utf8(buf.to_vec()).unwrap());
     }
 
-    pub async fn read_message(&mut self) -> Result<Message, Error> {
+    pub async fn read_message(&mut self) -> Result<Message> {
         let x: String = self.read_line().await?;
         let seqs = self.read_line().await?;
         let vn: String = self.read_line().await?;
-        let seq = match seqs.parse::<i64>() {
-            Ok(v) => v,
-            Err(_) => return Err(Error::new(std::io::ErrorKind::Other, "Invalid sequence number")),
-        };
+        let seq = seqs.parse::<i64>()?;
         let mut msg = new_message(x, seq, vec![]);
-        let n = match vn.parse::<i64>() {
-            Ok(v) => v,
-            Err(_) => return Err(Error::new(std::io::ErrorKind::Other, "Invalid number of values")),
-        };
+        let n =  vn.parse::<i64>()?;
 
         for _ in 0..n {
             let s = self.read_line().await?;
