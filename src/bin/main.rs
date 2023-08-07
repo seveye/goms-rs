@@ -18,15 +18,13 @@ async fn main() {
     .filter(None, LevelFilter::Trace)
     .init();
 
-    let mut cli = match watch::client::connect("127.0.0.1:16543").await {
+    let mut cli = match watch::client::connect("127.0.0.1:16543", vec![String::from("nodeRegister:")], watch).await {
         Ok(client) => client,
         Err(e) => {
             log::warn!("Error: {}", e);
             return;
         }
     };
-
-    cli.keys.push(String::from("nodeRegister:"));
 
     match cli.initialize().await {
         Ok(_) => {
@@ -41,4 +39,8 @@ async fn main() {
     loop {
         tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
     }
+}
+
+fn watch(key: &str, field: &str, value: &str) {
+    log::trace!("watch: {} {} {}", key, field, value)
 }

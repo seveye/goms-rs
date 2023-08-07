@@ -8,6 +8,8 @@ use tokio::{
 
 use super::{message::new_message, Message};
 
+type WatchFn = fn(&str, &str, &str);
+
 pub struct Client {
     // pub connection: TcpWriter,
     map: Arc<Mutex<HashMap<i64, tokio::sync::mpsc::Sender<Message>>>>,
@@ -16,7 +18,10 @@ pub struct Client {
     tx: tokio::sync::mpsc::Sender<Message>,
 }
 
-pub async fn connect<T: ToSocketAddrs>(addr: T) -> Result<Client> {
+//connect 连接watch服务
+//keys: 关心的keys
+//f: watch回调函数检测关心的keys
+pub async fn connect<T: ToSocketAddrs>(addr: T, keys: Vec<String>, f: WatchFn) -> Result<Client> {
     let socket: tokio::net::TcpStream = tokio::net::TcpStream::connect(addr).await?;
     let (read, write) = socket.into_split();
     let db: Arc<Mutex<HashMap<i64, tokio::sync::mpsc::Sender<Message>>>> = Arc::new(Mutex::new(
@@ -41,8 +46,8 @@ pub async fn connect<T: ToSocketAddrs>(addr: T) -> Result<Client> {
             }
 
             //服务端推送
-            log::trace!("watch->: {:?}", msg);
-            if msg.cmd == "watch" {
+            if msg.cmd == "watch" && msg.values.len() >= 3{
+                f(msg.values[0].as_str(), msg.values[1].as_str(), msg.values[2].as_str());
             }
         }
     });
@@ -52,9 +57,7 @@ pub async fn connect<T: ToSocketAddrs>(addr: T) -> Result<Client> {
     let mut connection = TcpWriter::new(write);
     tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
-            log::trace!("write 1");
             connection.write_message(&msg).await.unwrap();
-            log::trace!("write 2");
         }
     });
 
@@ -67,14 +70,12 @@ pub async fn connect<T: ToSocketAddrs>(addr: T) -> Result<Client> {
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
 
-            log::trace!("heartbeat 1");
             {
                 let mut l = seq_clone.lock().await;
                 *l += 1;
                 let req = new_message(String::from("heartbeat"), *l, vec![]);
                 tx_clone.send(req).await.unwrap();
             }
-            log::trace!("heartbeat 2");
         }
     });
 
@@ -83,8 +84,8 @@ pub async fn connect<T: ToSocketAddrs>(addr: T) -> Result<Client> {
         // map: HashMap::new(),
         map: db.clone(),
         seq: seq.clone(),
-        keys: vec![],
         tx: tx,
+        keys: keys,
     })
 }
 
@@ -102,10 +103,11 @@ impl Client {
             db.insert(msg.seq, tx);
         }
 
+        //TODO: 待优化
         let req = new_message(msg.cmd.clone(), msg.seq, msg.values.clone());
-
-        // self.connection.write_message(msg).await?;
         self.tx.send(req).await.unwrap();
+
+        // self.tx.send(msg).await.unwrap();
 
         Ok(rx.recv().await.unwrap())
     }
